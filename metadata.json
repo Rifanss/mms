@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix محفظتي",
+  "description": "نظام استيراد ومعالجة بيانات العملاء أصحاب الطلبات من ملفات Excel وتصديرها",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
