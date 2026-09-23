@@ -6,6 +6,7 @@ import {
   RequiredColumnKey,
   MasterSaveLog
 } from '../types';
+import { normalizeArabicNumerals, formatSaudiMobileInternational } from '../utils/whatsappHelper';
 import { 
   Database, 
   Search, 
@@ -57,9 +58,9 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
   const [selectedRequestStatus, setSelectedRequestStatus] = useState<string>('');
   const [selectedProductType, setSelectedProductType] = useState<string>('');
 
-  // Column header sorting
-  const [sortColumn, setSortColumn] = useState<RequiredColumnKey | null>(null);
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  // Column header sorting - default: debt amount descending (أعلى مديونية في الأعلى)
+  const [sortColumn, setSortColumn] = useState<RequiredColumnKey | null>('debtAmount');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -119,21 +120,23 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
     setSelectedRequestType('');
     setSelectedRequestStatus('');
     setSelectedProductType('');
-    setSortColumn(null);
+    setSortColumn('debtAmount');
+    setSortDirection('desc');
     setCurrentPage(1);
   };
 
   // Header column click sorting
   const handleHeaderSort = (key: RequiredColumnKey) => {
     if (sortColumn === key) {
-      if (sortDirection === 'asc') setSortDirection('desc');
+      if (sortDirection === 'desc') setSortDirection('asc');
       else {
-        setSortColumn(null);
-        setSortDirection('asc');
+        // Reset to default: debt descending
+        setSortColumn('debtAmount');
+        setSortDirection('desc');
       }
     } else {
       setSortColumn(key);
-      setSortDirection('asc');
+      setSortDirection(key === 'debtAmount' ? 'desc' : 'asc');
     }
     setCurrentPage(1);
   };
@@ -183,7 +186,7 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
       return true;
     });
 
-    // Custom column sort or default date sort
+    // Custom column sort or default debt sort
     if (sortColumn) {
       result = result.sort((a, b) => {
         const valA = (a[sortColumn] || '').toString().toLowerCase();
@@ -200,8 +203,13 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
         return sortDirection === 'asc' ? cmp : -cmp;
       });
     } else {
-      // Default Date Sorting
+      // Default: Sort descending by debt amount (أعلى مبلغ مديونية في الأعلى، ثم الأقل فالأقل)
       result = result.sort((a, b) => {
+        const numA = parseFloat(String(a.debtAmount || '').replace(/,/g, '')) || 0;
+        const numB = parseFloat(String(b.debtAmount || '').replace(/,/g, '')) || 0;
+        if (numB !== numA) {
+          return numB - numA;
+        }
         if (dateSort === 'newest') {
           const timeA = a.rawParsedDate ? a.rawParsedDate.getTime() : 0;
           const timeB = b.rawParsedDate ? b.rawParsedDate.getTime() : 0;
@@ -249,6 +257,25 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
       return 'bg-blue-50 text-blue-700 border-blue-200';
     }
     return 'bg-amber-50 text-amber-700 border-amber-200';
+  };
+
+  const getStatusTextColor = (status: string) => {
+    const s = status.trim().toLowerCase();
+    if (s.includes('مغلق') || s.includes('منتهي') || s.includes('closed') || s.includes('done') || s.includes('resolved')) {
+      return 'text-emerald-700';
+    }
+    if (s.includes('مرفوض') || s.includes('ملغي') || s.includes('rejected') || s.includes('cancelled')) {
+      return 'text-rose-700';
+    }
+    if (s.includes('جديد') || s.includes('new') || s.includes('قيد الانتظار') || s.includes('pending')) {
+      return 'text-blue-700';
+    }
+    return 'text-amber-700';
+  };
+
+  const toEng = (val: unknown): string => {
+    if (val === null || val === undefined || val === '') return '—';
+    return normalizeArabicNumerals(String(val));
   };
 
   const isFiltered = filteredRecords.length !== masterRecords.length || searchQuery !== '' || selectedRequestType !== '' || selectedRequestStatus !== '';
@@ -339,11 +366,11 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
               <span>المديونية التراكمية</span>
               <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-400" />
             </div>
-            <p className="text-lg sm:text-3xl font-black text-teal-300 font-mono truncate" title={`${totalDebt.toLocaleString()} ر.س`}>
-              {totalDebt > 0 ? `${(totalDebt / 1_000_000).toFixed(2)}M` : '0'} <span className="text-[10px] sm:text-xs text-slate-400">ر.س</span>
+            <p className="text-lg sm:text-3xl font-black text-teal-300 font-mono truncate" title={totalDebt.toLocaleString('en-US')}>
+              {totalDebt > 0 ? `${(totalDebt / 1_000_000).toFixed(2)}M` : '0'}
             </p>
             <p className="text-[9px] sm:text-[11px] text-slate-400 font-mono truncate">
-              {totalDebt.toLocaleString(undefined, { maximumFractionDigits: 0 })} ر.س
+              {totalDebt.toLocaleString('en-US', { maximumFractionDigits: 0 })}
             </p>
           </div>
 
@@ -672,7 +699,7 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
                           <div>
                             <span className="text-slate-400 block text-[9px]">المديونية:</span>
                             <span className="font-mono font-bold text-emerald-700">
-                              {rec.debtAmount ? `${rec.debtAmount} ر.س` : '—'}
+                              {rec.debtAmount || '—'}
                             </span>
                           </div>
                           <div>
@@ -697,8 +724,8 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
 
                         {/* Action Footer */}
                         <div className="pt-2 flex items-center justify-between border-t border-slate-100">
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            {rec.mobileNumber || ''}
+                          <span className="text-[10px] text-slate-500 font-mono font-medium" dir="ltr">
+                            {toEng(formatSaudiMobileInternational(rec.mobileNumber))}
                           </span>
                           <button
                             type="button"
@@ -725,7 +752,7 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
                 {/* Sticky Table Header */}
                 <thead className="bg-slate-900 text-white sticky top-0 z-20 shadow-xs">
                   <tr>
-                    <th className="p-2 sm:p-3 font-bold border-b border-slate-800 w-10 text-center text-slate-400 text-[10px] sm:text-xs">
+                    <th className="p-2 sm:p-3 font-bold border-b border-slate-800 w-12 text-center text-slate-400 text-[10px] sm:text-xs">
                       #
                     </th>
 
@@ -733,10 +760,10 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
                       <th
                         key={col.key}
                         onClick={() => handleHeaderSort(col.key)}
-                        className="p-2 sm:p-3 font-bold border-b border-slate-800 hover:bg-slate-800/80 transition cursor-pointer select-none whitespace-nowrap text-left text-[10px] sm:text-xs"
+                        className="p-2 sm:p-3 font-bold border-b border-slate-800 hover:bg-slate-800/80 transition cursor-pointer select-none whitespace-nowrap text-center text-[10px] sm:text-xs"
                         title={`فرز حسب ${col.label}`}
                       >
-                        <div className="flex items-center gap-1 justify-start">
+                        <div className="flex items-center gap-1.5 justify-center">
                           <span>{col.label}</span>
                           <ArrowUpDown className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${sortColumn === col.key ? 'text-emerald-400' : 'text-slate-500'}`} />
                         </div>
@@ -750,10 +777,10 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
                 </thead>
 
                 {/* Table Body */}
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-slate-100">
                   {paginatedRecords.length === 0 ? (
                     <tr>
-                      <td colSpan={14} className="p-10 text-center text-slate-400">
+                      <td colSpan={14} className="p-10 text-center text-slate-400 bg-white">
                         <div className="space-y-2">
                           <AlertCircle className="w-8 h-8 mx-auto text-slate-300" />
                           <p className="text-xs sm:text-sm font-semibold">لا توجد سجلات مطابقة للبحث أو الفلترة الحالية</p>
@@ -763,76 +790,73 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
                   ) : (
                     paginatedRecords.map((rec, idx) => {
                       const rowNum = (currentPage - 1) * pageSize + idx + 1;
+                      const isEven = idx % 2 === 0;
+                      const rowBg = isEven ? 'bg-white' : 'bg-slate-50/70';
+
                       return (
                         <tr
                           key={rec.id || idx}
                           onClick={() => onSelectCustomer(rec.accountNumber || rec.customerName)}
-                          className="hover:bg-emerald-50/40 transition cursor-pointer group text-left"
+                          className={`${rowBg} hover:bg-emerald-50/50 transition cursor-pointer group`}
                         >
-                          {/* Row Index */}
-                          <td className="p-2 sm:p-3 text-center text-slate-400 font-mono text-[10px] sm:text-[11px]">
-                            {rowNum}
+                          {/* Row Index - Centered English digits */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle text-slate-400 font-mono text-[10px] sm:text-[11px] whitespace-nowrap">
+                            {toEng(rowNum)}
                           </td>
 
-                          {/* 1. رقم الحساب */}
-                          <td className="p-2 sm:p-3 font-mono font-bold text-slate-900 whitespace-nowrap text-left">
-                            {rec.accountNumber || '—'}
+                          {/* 1. رقم الحساب - Centered English digits */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle font-mono font-bold text-slate-900 whitespace-nowrap">
+                            {toEng(rec.accountNumber)}
                           </td>
 
-                          {/* 2. مبلغ المديونية */}
-                          <td className="p-2 sm:p-3 font-mono font-semibold text-emerald-700 whitespace-nowrap text-left">
-                            {rec.debtAmount ? `${rec.debtAmount} ر.س` : '—'}
+                          {/* 2. مبلغ المديونية - Centered English digits */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle font-mono font-semibold text-emerald-700 whitespace-nowrap">
+                            {toEng(rec.debtAmount)}
                           </td>
 
-                          {/* 3. اسم العميل */}
-                          <td className="p-2 sm:p-3 font-bold text-slate-900 hover:text-emerald-700 transition whitespace-nowrap text-left">
+                          {/* 3. اسم العميل - RIGHT-ALIGNED for Arabic text */}
+                          <td className="p-2.5 sm:p-3 text-right align-middle font-bold text-slate-900 hover:text-emerald-700 transition whitespace-nowrap">
                             {rec.customerName || '—'}
                           </td>
 
-                          {/* 4. نوع المنتج */}
-                          <td className="p-2 sm:p-3 text-slate-700 whitespace-nowrap text-left">
+                          {/* 4. نوع المنتج - Centered */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle text-slate-700 whitespace-nowrap font-medium">
                             {rec.productType || '—'}
                           </td>
 
-                          {/* 5. رقم الهوية */}
-                          <td className="p-2 sm:p-3 font-mono text-slate-800 whitespace-nowrap text-left">
-                            {rec.nationalId || '—'}
+                          {/* 5. رقم الهوية - Centered English digits */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle font-mono text-slate-800 whitespace-nowrap">
+                            {toEng(rec.nationalId)}
                           </td>
 
-                          {/* 6. تاريخ التجميد */}
-                          <td className="p-2 sm:p-3 text-slate-600 whitespace-nowrap text-left">
+                          {/* 6. تاريخ التجميد - Centered English digits */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle text-slate-600 whitespace-nowrap">
                             {rec.freezeDate ? (
-                              <span className="text-rose-600 font-medium">{rec.freezeDate}</span>
+                              <span className="text-rose-600 font-mono font-medium">{toEng(rec.freezeDate)}</span>
                             ) : (
                               '—'
                             )}
                           </td>
 
-                          {/* 7. رقم الجوال */}
-                          <td className="p-2 sm:p-3 font-mono text-slate-800 whitespace-nowrap text-left">
-                            {rec.mobileNumber || '—'}
+                          {/* 7. رقم الجوال - Centered English digits in Saudi International Format (+9665XXXXXXXX) */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle font-mono text-slate-800 whitespace-nowrap" dir="ltr">
+                            {toEng(formatSaudiMobileInternational(rec.mobileNumber))}
                           </td>
 
-                          {/* 8. نوع الطلب */}
-                          <td className="p-2 sm:p-3 font-bold text-slate-900 whitespace-nowrap text-left">
-                            {rec.requestType ? (
-                              <span className="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-semibold border border-slate-200 text-[10px] sm:text-xs">
-                                {rec.requestType}
-                              </span>
-                            ) : (
-                              '—'
-                            )}
+                          {/* 8. نوع الطلب - Plain text, Centered, no badge/chip/border/rounded */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle text-slate-800 font-medium whitespace-nowrap">
+                            {rec.requestType || '—'}
                           </td>
 
-                          {/* 9. رقم الطلب */}
-                          <td className="p-2 sm:p-3 font-mono font-bold text-slate-900 whitespace-nowrap text-left">
-                            {rec.requestNumber || '—'}
+                          {/* 9. رقم الطلب - Centered English digits */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle font-mono font-bold text-slate-900 whitespace-nowrap">
+                            {toEng(rec.requestNumber)}
                           </td>
 
-                          {/* 10. حالة الطلب */}
-                          <td className="p-2 sm:p-3 whitespace-nowrap text-left">
+                          {/* 10. حالة الطلب - Plain text, Centered, semantic text color without badge/chip/border */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle whitespace-nowrap">
                             {rec.requestStatus ? (
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] sm:text-[11px] font-bold border ${getStatusBadge(rec.requestStatus)}`}>
+                              <span className={`font-bold text-[11px] sm:text-xs ${getStatusTextColor(rec.requestStatus)}`}>
                                 {rec.requestStatus}
                               </span>
                             ) : (
@@ -840,18 +864,18 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
                             )}
                           </td>
 
-                          {/* 11. تاريخ فتح الطلب */}
-                          <td className="p-2 sm:p-3 font-mono text-slate-700 whitespace-nowrap text-left">
-                            {rec.requestOpenDate || '—'}
+                          {/* 11. تاريخ فتح الطلب - Centered English digits */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle font-mono text-slate-700 whitespace-nowrap">
+                            {toEng(rec.requestOpenDate)}
                           </td>
 
-                          {/* 12. الوصف */}
-                          <td className="p-2 sm:p-3 text-slate-600 max-w-xs truncate text-left" title={rec.description}>
+                          {/* 12. الوصف - Centered, truncated */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle text-slate-600 max-w-xs truncate" title={rec.description}>
                             {rec.description || '—'}
                           </td>
 
-                          {/* Action column */}
-                          <td className="p-2 sm:p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          {/* Action column - Centered */}
+                          <td className="p-2.5 sm:p-3 text-center align-middle whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                             <button
                               onClick={() => onSelectCustomer(rec.accountNumber || rec.customerName)}
                               className="p-1 rounded text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition cursor-pointer"
@@ -873,8 +897,8 @@ export const MasterPortfolioView: React.FC<MasterPortfolioViewProps> = ({
           {totalPages > 1 && (
             <div className="p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 text-[10px] sm:text-xs border-t border-slate-100">
               <div className="text-slate-500 text-center sm:text-right">
-                صفحة <span className="font-bold text-slate-900 font-mono">{currentPage}</span> من{' '}
-                <span className="font-bold text-slate-900 font-mono">{totalPages}</span>
+                صفحة <span className="font-bold text-slate-900 font-mono">{toEng(currentPage)}</span> من{' '}
+                <span className="font-bold text-slate-900 font-mono">{toEng(totalPages)}</span>
               </div>
 
               <div className="flex items-center gap-1 sm:gap-1.5">

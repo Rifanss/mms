@@ -327,7 +327,52 @@ export interface MasterSaveResult {
   log: MasterSaveLog;
 }
 
-export type ActiveViewTab = 'imported' | 'master';
+/**
+ * WhatsApp Master Portfolio Record
+ * Exactly 8 functional fields requested:
+ * 1. رقم الحساب
+ * 2. مبلغ المديونية
+ * 3. اسم العميل
+ * 4. رقم الهوية
+ * 5. نوع المنتج
+ * 6. نوع الطلب
+ * 7. رقم الجوال
+ * 8. رابط واتساب
+ */
+export interface WhatsAppRecord {
+  id: string; // Unique row ID
+  accountNumber: string; // 1. رقم الحساب
+  debtAmount: string; // 2. مبلغ المديونية
+  customerName: string; // 3. اسم العميل
+  nationalId: string; // 4. رقم الهوية
+  productType: string; // 5. نوع المنتج
+  requestType: string; // 6. نوع الطلب
+  mobileNumber: string; // 7. رقم الجوال
+  whatsappUrl: string; // 8. رابط واتساب (https://wa.me/9665XXXXXXXX)
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export const WHATSAPP_COLUMNS = [
+  { key: 'accountNumber', label: 'رقم الحساب', order: 1 },
+  { key: 'debtAmount', label: 'مبلغ المديونية', order: 2 },
+  { key: 'customerName', label: 'اسم العميل', order: 3 },
+  { key: 'nationalId', label: 'رقم الهوية', order: 4 },
+  { key: 'productType', label: 'نوع المنتج', order: 5 },
+  { key: 'requestType', label: 'نوع الطلب', order: 6 },
+  { key: 'mobileNumber', label: 'رقم الجوال', order: 7 },
+  { key: 'whatsappUrl', label: 'رابط واتساب', order: 8 }
+] as const;
+
+export interface WhatsAppMergeResult {
+  addedCount: number;
+  updatedCount: number;
+  duplicateCount: number;
+  totalBefore: number;
+  totalAfter: number;
+}
+
+export type ActiveViewTab = 'imported' | 'master' | 'whatsapp';
 
 export type DateSortOption = 'newest' | 'oldest' | 'custom';
 

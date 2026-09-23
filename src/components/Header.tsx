@@ -9,7 +9,8 @@ import {
   HelpCircle,
   Database,
   BookmarkPlus,
-  Layers
+  Layers,
+  MessageCircle
 } from 'lucide-react';
 import { ActiveViewTab } from '../types';
 
@@ -17,6 +18,7 @@ interface HeaderProps {
   hasData: boolean;
   totalRecords: number;
   masterRecordsCount: number;
+  whatsAppRecordsCount: number;
   activeTab: ActiveViewTab;
   onTabChange: (tab: ActiveViewTab) => void;
   onImportClick: () => void;
@@ -31,6 +33,7 @@ export const Header: React.FC<HeaderProps> = ({
   hasData,
   totalRecords,
   masterRecordsCount,
+  whatsAppRecordsCount,
   activeTab,
   onTabChange,
   onImportClick,
@@ -137,10 +140,10 @@ export const Header: React.FC<HeaderProps> = ({
               </>
             )}
 
-            {/* When viewing Master Portfolio */}
-            {activeTab === 'master' && (
+            {/* When viewing Master Portfolio or WhatsApp Portfolio */}
+            {(activeTab === 'master' || activeTab === 'whatsapp') && (
               <button
-                id="master-import-another-btn"
+                id="header-tab-import-btn"
                 onClick={onImportClick}
                 className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-sm font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition cursor-pointer"
               >
@@ -152,15 +155,15 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Navigation Tabs Bar between Imported Portfolio and Master Portfolio */}
+      {/* Navigation Tabs Bar between Imported, Master, and WhatsApp Portfolios */}
       <div className="bg-slate-950/60 border-t border-slate-800/80 px-3 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <nav className="flex items-center gap-1.5 sm:gap-4 -mb-px" aria-label="Tabs">
+          <nav className="flex items-center gap-1.5 sm:gap-4 -mb-px overflow-x-auto" aria-label="Tabs">
             {/* Tab 1: المحفظة المستوردة */}
             <button
               id="tab-imported-portfolio"
               onClick={() => onTabChange('imported')}
-              className={`py-2 sm:py-2.5 px-2.5 sm:px-4 font-bold text-xs sm:text-sm border-b-2 flex items-center gap-1.5 sm:gap-2 transition cursor-pointer ${
+              className={`py-2 sm:py-2.5 px-2.5 sm:px-4 font-bold text-xs sm:text-sm border-b-2 flex items-center gap-1.5 sm:gap-2 transition cursor-pointer whitespace-nowrap ${
                 activeTab === 'imported'
                   ? 'border-emerald-400 text-emerald-400 bg-slate-800/40'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
@@ -182,7 +185,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="tab-master-portfolio"
               onClick={() => onTabChange('master')}
-              className={`py-2 sm:py-2.5 px-2.5 sm:px-4 font-bold text-xs sm:text-sm border-b-2 flex items-center gap-1.5 sm:gap-2 transition cursor-pointer ${
+              className={`py-2 sm:py-2.5 px-2.5 sm:px-4 font-bold text-xs sm:text-sm border-b-2 flex items-center gap-1.5 sm:gap-2 transition cursor-pointer whitespace-nowrap ${
                 activeTab === 'master'
                   ? 'border-emerald-400 text-emerald-400 bg-slate-800/40'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
@@ -197,12 +200,34 @@ export const Header: React.FC<HeaderProps> = ({
                 {masterRecordsCount.toLocaleString()}
               </span>
             </button>
+
+            {/* Tab 3: محفظة واتساب */}
+            <button
+              id="tab-whatsapp-portfolio"
+              onClick={() => onTabChange('whatsapp')}
+              className={`py-2 sm:py-2.5 px-2.5 sm:px-4 font-bold text-xs sm:text-sm border-b-2 flex items-center gap-1.5 sm:gap-2 transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'whatsapp'
+                  ? 'border-emerald-400 text-emerald-400 bg-slate-800/40'
+                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
+              }`}
+            >
+              <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
+              <span className="sm:hidden">واتساب</span>
+              <span className="hidden sm:inline">محفظة واتساب (الدائمة)</span>
+              <span className={`px-1.5 sm:px-2 py-0.2 rounded-full text-[9px] sm:text-[10px] font-mono font-bold ${
+                activeTab === 'whatsapp' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'
+              }`}>
+                {whatsAppRecordsCount.toLocaleString()}
+              </span>
+            </button>
           </nav>
 
           {/* Quick status message */}
           <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-400">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>المحفظة الرئيسية محفوظة ومستمرة دائماً</span>
+            <span>
+              {activeTab === 'whatsapp' ? 'محفظة واتساب الدائمة مستقلة ومحفوظة' : 'المحفظة الرئيسية محفوظة ومستمرة دائماً'}
+            </span>
           </div>
         </div>
       </div>

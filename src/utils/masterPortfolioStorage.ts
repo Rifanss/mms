@@ -1,4 +1,6 @@
 import { PortfolioRecord, MasterSaveLog, MasterSaveResult } from '../types';
+import { formatDebtAmount } from './excelParser';
+import { formatSaudiMobileInternational } from './whatsappHelper';
 
 const MASTER_PORTFOLIO_STORAGE_KEY = 'MAHFADATY_MASTER_PORTFOLIO_DATA_V1';
 const MASTER_LOGS_STORAGE_KEY = 'MAHFADATY_MASTER_SAVE_LOGS_V1';
@@ -14,7 +16,7 @@ export function loadMasterPortfolio(): PortfolioRecord[] {
     if (!Array.isArray(parsed)) return [];
 
     // Re-hydrate rawParsedDate for sorting
-    return parsed.map((item: PortfolioRecord) => {
+    const hydrated = parsed.map((item: PortfolioRecord) => {
       let rawDate: Date | null = null;
       if (item.requestOpenDate) {
         const d = new Date(item.requestOpenDate);
@@ -24,8 +26,17 @@ export function loadMasterPortfolio(): PortfolioRecord[] {
       }
       return {
         ...item,
+        debtAmount: formatDebtAmount(item.debtAmount),
+        mobileNumber: formatSaudiMobileInternational(item.mobileNumber),
         rawParsedDate: rawDate
       };
+    });
+
+    // Sort descending by debt amount (highest to lowest)
+    return hydrated.sort((a: PortfolioRecord, b: PortfolioRecord) => {
+      const valA = parseFloat(String(a.debtAmount || '').replace(/,/g, '')) || 0;
+      const valB = parseFloat(String(b.debtAmount || '').replace(/,/g, '')) || 0;
+      return valB - valA;
     });
   } catch (error) {
     console.error('Failed to load Master Portfolio from localStorage:', error);
@@ -141,7 +152,8 @@ export function mergeIntoMasterPortfolio(
       const newId = incoming.id || `master_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       const newRec: PortfolioRecord = {
         ...incoming,
-        id: newId
+        id: newId,
+        mobileNumber: formatSaudiMobileInternational(incoming.mobileNumber)
       };
       const newIndex = updatedMaster.length;
       updatedMaster.push(newRec);
@@ -182,7 +194,10 @@ export function mergeIntoMasterPortfolio(
           incomingVal.trim() !== '' &&
           incomingVal.trim() !== existingStr
         ) {
-          (existing as any)[field] = incomingVal.trim();
+          const finalVal = field === 'mobileNumber'
+            ? formatSaudiMobileInternational(incomingVal)
+            : incomingVal.trim();
+          (existing as any)[field] = finalVal;
           hasChanges = true;
         }
       }
@@ -223,6 +238,13 @@ export function mergeIntoMasterPortfolio(
     duplicateRowsCount,
     totalMasterAfter: totalAfter
   };
+
+  // Ensure master portfolio is stored sorted descending by debt amount (highest to lowest)
+  updatedMaster.sort((a, b) => {
+    const valA = parseFloat(String(a.debtAmount || '').replace(/,/g, '')) || 0;
+    const valB = parseFloat(String(b.debtAmount || '').replace(/,/g, '')) || 0;
+    return valB - valA;
+  });
 
   // Persist to Storage
   saveMasterPortfolio(updatedMaster);

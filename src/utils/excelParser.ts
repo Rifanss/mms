@@ -3,8 +3,11 @@ import {
   PortfolioRecord, 
   PORTFOLIO_COLUMNS, 
   RequiredColumnKey, 
-  ImportSummary 
+  ImportSummary,
+  WhatsAppRecord
 } from '../types';
+import { parseMobileAndGenerateWhatsAppUrl, formatSaudiMobileInternational } from './whatsappHelper';
+import { normalizeProductType } from './productHelper';
 
 /**
  * Normalizes text for robust header matching (removes diacritics, extra spaces, standardizes Arabic characters)
@@ -150,19 +153,35 @@ export function parseExcelDate(val: unknown): { dateStr: string; dateObj: Date |
 }
 
 /**
- * Format debt amount consistently
+ * Format debt amount consistently as standard English numerals without any currency symbol.
  */
 export function formatDebtAmount(val: unknown): string {
   if (val === null || val === undefined || val === '') return '';
   if (typeof val === 'number') {
     return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
-  const cleanStr = String(val).replace(/,/g, '').trim();
-  const num = parseFloat(cleanStr);
+
+  // Convert Eastern Arabic/Persian digits (٠-٩ / ۰-۹) to standard Western digits (0-9)
+  let str = String(val)
+    .replace(/[٠۰]/g, '0')
+    .replace(/[١۱]/g, '1')
+    .replace(/[٢۲]/g, '2')
+    .replace(/[٣۳]/g, '3')
+    .replace(/[٤۴]/g, '4')
+    .replace(/[٥۵]/g, '5')
+    .replace(/[٦۶]/g, '6')
+    .replace(/[٧۷]/g, '7')
+    .replace(/[٨۸]/g, '8')
+    .replace(/[٩۹]/g, '9');
+
+  // Strip any currency words like 'ر.س', 'رس', 'SAR', 'ريال', commas and extra spaces
+  str = str.replace(/ر\.?\s*س/g, '').replace(/ريال/g, '').replace(/SAR/gi, '').replace(/,/g, '').trim();
+
+  const num = parseFloat(str);
   if (!isNaN(num)) {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
-  return String(val).trim();
+  return str;
 }
 
 /**
@@ -256,6 +275,7 @@ export async function processExcelFile(
 ): Promise<{
   extractedRecords: PortfolioRecord[];
   summary: ImportSummary;
+  whatsAppRecords: WhatsAppRecord[];
 }> {
   // Read workbook
   const workbook = XLSX.read(buffer, {
@@ -325,6 +345,10 @@ export async function processExcelFile(
   const seenCompositeKeys = new Set<string>();
   const uniqueCustomerAccounts = new Set<string>();
 
+  // WhatsApp records extracted in parallel for all rows with a valid mobile number
+  const whatsAppRecords: WhatsAppRecord[] = [];
+  const seenWhatsAppMap = new Map<string, WhatsAppRecord>();
+
   for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
     const row = dataRows[rowIndex];
     if (!row || !Array.isArray(row) || row.every((c) => !isNonEmpty(c))) {
@@ -342,17 +366,12 @@ export async function processExcelFile(
     const hasRequestType = isNonEmpty(reqTypeStr);
     const hasRequestNumber = isNonEmpty(reqNumberStr);
 
-    // CRITICAL CONDITION:
+    // CRITICAL CONDITION FOR CURRENT PORTFOLIO:
     // Row is INCLUDED if (requestType != empty OR requestNumber != empty)
     // Row is EXCLUDED if (requestType == empty AND requestNumber == empty)
     const hasRequest = hasRequestType || hasRequestNumber;
 
-    if (!hasRequest) {
-      excludedNoRequests++;
-      continue;
-    }
-
-    // Extract fields
+    // Extract fields using standardized normalizers
     const accountNumber = keyMap.accountNumber !== undefined 
       ? formatSensitiveString(row[keyMap.accountNumber]) 
       : '';
@@ -363,7 +382,7 @@ export async function processExcelFile(
       ? String(row[keyMap.customerName] ?? '').trim() 
       : '';
     const productType = keyMap.productType !== undefined 
-      ? String(row[keyMap.productType] ?? '').trim() 
+      ? normalizeProductType(row[keyMap.productType]) 
       : '';
     const nationalId = keyMap.nationalId !== undefined 
       ? formatSensitiveString(row[keyMap.nationalId]) 
@@ -371,9 +390,10 @@ export async function processExcelFile(
     const freezeDate = keyMap.freezeDate !== undefined 
       ? parseExcelDate(row[keyMap.freezeDate]).dateStr 
       : '';
-    const mobileNumber = keyMap.mobileNumber !== undefined 
+    const rawMobile = keyMap.mobileNumber !== undefined 
       ? formatSensitiveString(row[keyMap.mobileNumber]) 
       : '';
+    const mobileNumber = formatSaudiMobileInternational(rawMobile);
     const requestStatus = keyMap.requestStatus !== undefined 
       ? String(row[keyMap.requestStatus] ?? '').trim() 
       : '';
@@ -387,47 +407,99 @@ export async function processExcelFile(
       ? String(row[keyMap.description] ?? '').trim() 
       : '';
 
-    // Deduplication key logic:
-    // If requestNumber exists: accountNumber + "___" + requestNumber
-    // If requestNumber is missing: accountNumber + "___" + reqTypeStr + "___" + requestOpenDate + "___" + description
-    let compositeKey = '';
-    if (hasRequestNumber) {
-      compositeKey = `${accountNumber}___REQNUM___${reqNumberStr}`;
+    // ========================================================
+    // Track 1: Existing Current Portfolio (Only Customers with Requests)
+    // ========================================================
+    if (hasRequest) {
+      let compositeKey = '';
+      if (hasRequestNumber) {
+        compositeKey = `${accountNumber}___REQNUM___${reqNumberStr}`;
+      } else {
+        compositeKey = `${accountNumber}___REQTYPE___${reqTypeStr}___${requestOpenDate}___${description}`;
+      }
+
+      // Prevent duplicate records within the imported file
+      if (!seenCompositeKeys.has(compositeKey)) {
+        seenCompositeKeys.add(compositeKey);
+
+        if (accountNumber) {
+          uniqueCustomerAccounts.add(accountNumber);
+        } else if (customerName) {
+          uniqueCustomerAccounts.add(customerName);
+        }
+
+        const record: PortfolioRecord = {
+          id: `rec-${rowIndex + 1}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          accountNumber,
+          debtAmount,
+          customerName,
+          productType,
+          nationalId,
+          freezeDate,
+          mobileNumber,
+          requestType: reqTypeStr,
+          requestNumber: reqNumberStr,
+          requestStatus,
+          requestOpenDate,
+          description,
+          rawParsedDate: parsedOpenDate.dateObj
+        };
+
+        extractedRecords.push(record);
+      }
     } else {
-      compositeKey = `${accountNumber}___REQTYPE___${reqTypeStr}___${requestOpenDate}___${description}`;
+      excludedNoRequests++;
     }
 
-    // Prevent duplicate records within the imported file
-    if (seenCompositeKeys.has(compositeKey)) {
-      continue;
+    // ========================================================
+    // Track 2: Parallel WhatsApp Portfolio (Criterion: Valid Mobile Number)
+    // Regardless of whether customer has a request or not!
+    // ========================================================
+    const parsedPhone = parseMobileAndGenerateWhatsAppUrl(mobileNumber);
+    if (parsedPhone.isValid) {
+      // Key priority within this file batch: Account > National ID > Mobile
+      const batchKey = accountNumber 
+        ? `ACC_${accountNumber.toUpperCase()}` 
+        : (nationalId ? `ID_${nationalId.toUpperCase()}` : `MOB_${parsedPhone.internationalPhone}`);
+
+      const existingInBatch = seenWhatsAppMap.get(batchKey);
+      if (!existingInBatch) {
+        const waRec: WhatsAppRecord = {
+          id: `wa-${rowIndex + 1}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          accountNumber,
+          debtAmount,
+          customerName,
+          nationalId,
+          productType,
+          requestType: reqTypeStr, // Can be empty or populated!
+          mobileNumber: formatSaudiMobileInternational(parsedPhone.cleanMobile || mobileNumber),
+          whatsappUrl: parsedPhone.whatsappUrl
+        };
+        seenWhatsAppMap.set(batchKey, waRec);
+        whatsAppRecords.push(waRec);
+      } else {
+        // Safe batch merge: if subsequent row has non-empty field, fill it
+        if (!existingInBatch.debtAmount && debtAmount) existingInBatch.debtAmount = debtAmount;
+        if (!existingInBatch.customerName && customerName) existingInBatch.customerName = customerName;
+        if (!existingInBatch.productType && productType) existingInBatch.productType = productType;
+        if (!existingInBatch.requestType && reqTypeStr) existingInBatch.requestType = reqTypeStr;
+        if (!existingInBatch.nationalId && nationalId) existingInBatch.nationalId = nationalId;
+      }
     }
-    seenCompositeKeys.add(compositeKey);
-
-    if (accountNumber) {
-      uniqueCustomerAccounts.add(accountNumber);
-    } else if (customerName) {
-      uniqueCustomerAccounts.add(customerName);
-    }
-
-    const record: PortfolioRecord = {
-      id: `rec-${rowIndex + 1}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      accountNumber,
-      debtAmount,
-      customerName,
-      productType,
-      nationalId,
-      freezeDate,
-      mobileNumber,
-      requestType: reqTypeStr,
-      requestNumber: reqNumberStr,
-      requestStatus,
-      requestOpenDate,
-      description,
-      rawParsedDate: parsedOpenDate.dateObj
-    };
-
-    extractedRecords.push(record);
   }
+
+  // Sort both portfolios descending by debt amount (أعلى مبلغ مديونية في الأعلى، ثم الأقل فالأقل)
+  extractedRecords.sort((a, b) => {
+    const valA = parseFloat(String(a.debtAmount || '').replace(/,/g, '')) || 0;
+    const valB = parseFloat(String(b.debtAmount || '').replace(/,/g, '')) || 0;
+    return valB - valA;
+  });
+
+  whatsAppRecords.sort((a, b) => {
+    const valA = parseFloat(String(a.debtAmount || '').replace(/,/g, '')) || 0;
+    const valB = parseFloat(String(b.debtAmount || '').replace(/,/g, '')) || 0;
+    return valB - valA;
+  });
 
   const summary: ImportSummary = {
     fileName,
@@ -443,7 +515,7 @@ export async function processExcelFile(
     importedAt: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
   };
 
-  return { extractedRecords, summary };
+  return { extractedRecords, summary, whatsAppRecords };
 }
 
 /**
@@ -488,8 +560,14 @@ export function mergePortfolioRecords(
     }
   }
 
+  const merged = [...existing, ...newlyAdded].sort((a, b) => {
+    const valA = parseFloat(String(a.debtAmount || '').replace(/,/g, '')) || 0;
+    const valB = parseFloat(String(b.debtAmount || '').replace(/,/g, '')) || 0;
+    return valB - valA;
+  });
+
   return {
-    merged: [...existing, ...newlyAdded],
+    merged,
     addedCount: newlyAdded.length,
     duplicateCount
   };
@@ -502,11 +580,18 @@ export function exportPortfolioToExcel(
   records: PortfolioRecord[], 
   filename: string = 'محفظتي_العملاء_اصحاب_الطلبات.xlsx'
 ): void {
+  // Ensure exported records are sorted descending by debt amount (أعلى مديونية أولاً)
+  const sortedRecords = [...records].sort((a, b) => {
+    const valA = parseFloat(String(a.debtAmount || '').replace(/,/g, '')) || 0;
+    const valB = parseFloat(String(b.debtAmount || '').replace(/,/g, '')) || 0;
+    return valB - valA;
+  });
+
   // Headers strictly in order
   const headers = PORTFOLIO_COLUMNS.map((col) => col.label);
 
   // Rows strictly in order
-  const rows = records.map((rec) => [
+  const rows = sortedRecords.map((rec) => [
     rec.accountNumber, // 1. رقم الحساب
     rec.debtAmount,    // 2. مبلغ المديونية
     rec.customerName,  // 3. اسم العميل

@@ -155,6 +155,45 @@ export const RulesModal: React.FC<RulesModalProps> = ({
               تتم قراءة ومعالجة ملفات Excel محلياً بالكامل داخل متصفح المستخدم دون إرسال البيانات لأي خوادم خارجية أو نماذج ذكاء اصطناعي، ويتم الحفاظ على دقة الأرقام الحساسة (أرقام الحسابات، الهويات، الجوالات) كنصوص لمنع حذف الأصفار أو تغيير صياغتها.
             </p>
           </div>
+
+          {/* Rule 6: WhatsApp Portfolio */}
+          <div className="space-y-1.5 sm:space-y-2 p-3 sm:p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+            <h4 className="font-bold text-emerald-950 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+              <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 shrink-0" />
+              6. محفظة واتساب الدائمة المستقلة
+            </h4>
+            <p className="text-emerald-950 leading-relaxed text-[10px] sm:text-xs">
+              وظيفة موازية ومستقلة تماماً: تستخرج كل عميل يمتلك رقم جوال صالح (سواء كان لديه طلب أو بدون طلب)، وتنشئ له رابط واتساب مباشر بصيغة <code>https://wa.me/966...</code> وتُحفظ تلقائياً في المحفظة الدائمة الخاصة بها مع منع التكرار وإمكانية تصديرها المستقل إلى Excel بالأعمدة الـ 8 المحددة.
+            </p>
+          </div>
+
+          {/* Rule 7: Sorting by Debt Descending */}
+          <div className="space-y-1.5 sm:space-y-2 p-3 sm:p-4 rounded-xl bg-amber-50/70 border border-amber-200">
+            <h4 className="font-bold text-amber-950 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+              <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600 shrink-0" />
+              7. الترتيب التلقائي حسب مبلغ المديونية تنازلياً
+            </h4>
+            <p className="text-amber-950 leading-relaxed text-[10px] sm:text-xs">
+              في كل من «محفظة واتساب» و«محفظة الطلبات»، يتم ترتيب العملاء تلقائياً تنازلياً بحسب مبلغ المديونية، بحيث يظهر صاحب أعلى مديونية في أعلى الجدول ثم الأقل فالأقل حتى الوصول إلى أقل مبلغ مديونية، سواء في العرض أو عند تصدير الملفات.
+            </p>
+          </div>
+
+          {/* Rule 8: Standard Product Codes */}
+          <div className="space-y-1.5 sm:space-y-2 p-3 sm:p-4 rounded-xl bg-indigo-50/70 border border-indigo-200">
+            <h4 className="font-bold text-indigo-950 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+              <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600 shrink-0" />
+              8. اعتماد رموز تصنيف المنتجات الموحدة (RF, PF, AL, CC)
+            </h4>
+            <p className="text-indigo-950 leading-relaxed text-[10px] sm:text-xs">
+              يتم توحيد عمود «نوع المنتج» تلقائياً إلى الرموز الائتمانية الأربعة المعتمدة:
+              <span className="block mt-1 font-mono font-bold text-slate-800 space-y-0.5">
+                <span>• <b>RF</b> : التمويل العقاري</span><br />
+                <span>• <b>PF</b> : التمويل الشخصي</span><br />
+                <span>• <b>AL</b> : التمويل التأجيري</span><br />
+                <span>• <b>CC</b> : البطاقة الائتمانية</span>
+              </span>
+            </p>
+          </div>
         </div>
 
         <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end shrink-0">

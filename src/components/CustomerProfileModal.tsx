@@ -43,6 +43,7 @@ import {
   fileToDataUrl 
 } from '../utils/customerAttachmentsStorage';
 import { AttachmentPreviewModal } from './AttachmentPreviewModal';
+import { normalizeArabicNumerals, formatSaudiMobileInternational } from '../utils/whatsappHelper';
 
 interface CustomerProfileModalProps {
   customerAccount: string | null;
@@ -68,16 +69,16 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
   // Hidden File Inputs for 4 Slots
   const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  if (!isOpen || !customerAccount) return null;
-
   // Find all requests belonging to this customer account number (or name if account is empty)
-  const normalizedAccount = customerAccount.trim();
-  const customerRequests = allRecords.filter(
-    (r) => 
-      (r.accountNumber && r.accountNumber.trim() === normalizedAccount) || 
-      (r.customerName && r.customerName.trim() === normalizedAccount) ||
-      (r.nationalId && r.nationalId.trim() === normalizedAccount)
-  );
+  const normalizedAccount = (customerAccount || '').trim();
+  const customerRequests = normalizedAccount
+    ? allRecords.filter(
+        (r) => 
+          (r.accountNumber && r.accountNumber.trim() === normalizedAccount) || 
+          (r.customerName && r.customerName.trim() === normalizedAccount) ||
+          (r.nationalId && r.nationalId.trim() === normalizedAccount)
+      )
+    : [];
 
   const primaryRecord = customerRequests[0] || {} as PortfolioRecord;
   const customerKey = getCustomerKey(primaryRecord.accountNumber, primaryRecord.customerName, primaryRecord.nationalId);
@@ -102,11 +103,19 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
             setIsLoadingAttachments(false);
           }
         });
+    } else if (!isOpen) {
+      setAttachments({});
+      setUploadError(null);
+      setCopiedPhone(false);
+      setCopiedMessage(false);
+      setPreviewAttachment(null);
     }
     return () => {
       isMounted = false;
     };
   }, [isOpen, customerKey]);
+
+  if (!isOpen || !customerAccount) return null;
 
   // Clean and format WhatsApp phone number (Saudi Arabia priority)
   const getWhatsAppDetails = (rawPhone?: string) => {
@@ -359,7 +368,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                     المديونية
                   </span>
                   <p className="font-bold text-emerald-700 font-mono text-xs sm:text-sm truncate">
-                    {primaryRecord.debtAmount ? `${primaryRecord.debtAmount} ر.س` : '—'}
+                    {primaryRecord.debtAmount || '—'}
                   </p>
                 </div>
 
@@ -392,7 +401,8 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                     {primaryRecord.mobileNumber && (
                       <button
                         onClick={() => {
-                          navigator.clipboard.writeText(primaryRecord.mobileNumber || '');
+                          const formatted = formatSaudiMobileInternational(primaryRecord.mobileNumber);
+                          navigator.clipboard.writeText(formatted || primaryRecord.mobileNumber || '');
                           setCopiedPhone(true);
                           setTimeout(() => setCopiedPhone(false), 2000);
                         }}
@@ -404,7 +414,7 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({
                     )}
                   </div>
                   <p className="font-bold text-slate-900 font-mono text-xs sm:text-sm truncate" dir="ltr">
-                    {primaryRecord.mobileNumber || '—'}
+                    {primaryRecord.mobileNumber ? normalizeArabicNumerals(formatSaudiMobileInternational(primaryRecord.mobileNumber)) : '—'}
                   </p>
                 </div>
 

@@ -5,7 +5,8 @@ import {
   DateSortOption,
   ActiveViewTab,
   MasterSaveLog,
-  MasterSaveResult
+  MasterSaveResult,
+  WhatsAppRecord
 } from './types';
 import { processExcelFile, mergePortfolioRecords } from './utils/excelParser';
 import { generateTestExcelFile } from './utils/sampleGenerator';
@@ -16,11 +17,17 @@ import {
   clearMasterPortfolioStorage,
   saveMasterLogs
 } from './utils/masterPortfolioStorage';
+import {
+  loadWhatsAppMasterPortfolio,
+  clearWhatsAppMasterPortfolio,
+  mergeIntoWhatsAppMaster
+} from './utils/whatsappPortfolioStorage';
 import { Header } from './components/Header';
 import { DropZone } from './components/DropZone';
 import { StatsCards } from './components/StatsCards';
 import { PortfolioTable } from './components/PortfolioTable';
 import { MasterPortfolioView } from './components/MasterPortfolioView';
+import { WhatsAppPortfolioView } from './components/WhatsAppPortfolioView';
 import { CustomerProfileModal } from './components/CustomerProfileModal';
 import { ImportSummaryModal } from './components/ImportSummaryModal';
 import { ImportModeModal } from './components/ImportModeModal';
@@ -32,7 +39,8 @@ import {
   AlertCircle, 
   Database,
   Layers,
-  BookmarkPlus
+  BookmarkPlus,
+  MessageCircle
 } from 'lucide-react';
 
 export default function App() {
@@ -46,6 +54,10 @@ export default function App() {
   const [masterRecords, setMasterRecords] = useState<PortfolioRecord[]>(() => loadMasterPortfolio());
   const [masterLogs, setMasterLogs] = useState<MasterSaveLog[]>(() => loadMasterLogs());
   const [activeTab, setActiveTab] = useState<ActiveViewTab>('imported');
+
+  // WhatsApp Master Portfolio (Permanent / Independent storage)
+  const [whatsAppRecords, setWhatsAppRecords] = useState<WhatsAppRecord[]>(() => loadWhatsAppMasterPortfolio());
+  const [whatsAppNotice, setWhatsAppNotice] = useState<string | null>(null);
 
   // Modals state
   const [showSummaryModal, setShowSummaryModal] = useState<boolean>(false);
@@ -75,12 +87,27 @@ export default function App() {
   const processBuffer = useCallback(async (buffer: ArrayBuffer, fileName: string) => {
     setIsProcessing(true);
     setProcessingError(null);
+    setWhatsAppNotice(null);
 
     try {
-      const { extractedRecords, summary } = await processExcelFile(buffer, fileName);
+      const { extractedRecords, summary, whatsAppRecords: incomingWhatsApp } = await processExcelFile(buffer, fileName);
 
+      // Track 1 (Parallel & Independent): Direct update to Permanent WhatsApp Master Portfolio
+      if (incomingWhatsApp && incomingWhatsApp.length > 0) {
+        setWhatsAppRecords((prev) => {
+          const { updatedMaster, result } = mergeIntoWhatsAppMaster(prev, incomingWhatsApp);
+          setWhatsAppNotice(`تم تحديث محفظة واتساب الدائمة مباشرة: +${result.addedCount} جديد، ${result.updatedCount} تحديث (إجمالي محفظة واتساب: ${updatedMaster.length} عميل)`);
+          return updatedMaster;
+        });
+      }
+
+      // Track 2 (Current System): Customers with requests for temporary review portfolio
       if (extractedRecords.length === 0) {
-        setProcessingError('لم يتم العثور على أي عملاء لديهم طلبات (نوع الطلب أو رقم الطلب) داخل هذا الملف.');
+        if (incomingWhatsApp && incomingWhatsApp.length > 0) {
+          setProcessingError(`تم تحديث محفظة واتساب بنجاح بـ (${incomingWhatsApp.length}) عميل، ولكن لم يتم العثور على أي عملاء لديهم طلبات لإضافتهم للمحفظة المستوردة.`);
+        } else {
+          setProcessingError('لم يتم العثور على أي عملاء لديهم طلبات (نوع الطلب أو رقم الطلب) داخل هذا الملف.');
+        }
         setIsProcessing(false);
         return;
       }
@@ -260,7 +287,14 @@ export default function App() {
 
       return true;
     }).sort((a, b) => {
-      // Default Date Sorting on requestOpenDate
+      // Primary: Debt amount descending (أعلى مبلغ مديونية في الأعلى، ثم الأقل فالأقل)
+      const numA = parseFloat(String(a.debtAmount || '').replace(/,/g, '')) || 0;
+      const numB = parseFloat(String(b.debtAmount || '').replace(/,/g, '')) || 0;
+      if (numB !== numA) {
+        return numB - numA;
+      }
+
+      // Secondary: Date sorting
       if (dateSort === 'newest') {
         const timeA = a.rawParsedDate ? a.rawParsedDate.getTime() : 0;
         const timeB = b.rawParsedDate ? b.rawParsedDate.getTime() : 0;
@@ -312,6 +346,7 @@ export default function App() {
         hasData={hasImportedData}
         totalRecords={portfolioRecords.length}
         masterRecordsCount={masterRecords.length}
+        whatsAppRecordsCount={whatsAppRecords.length}
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onImportClick={() => {
@@ -319,7 +354,7 @@ export default function App() {
           input?.click();
         }}
         onExportClick={() => {
-          setExportTarget(activeTab);
+          setExportTarget(activeTab === 'whatsapp' ? 'master' : activeTab);
           setShowExportModal(true);
         }}
         onSaveToMaster={handleSaveToMasterPortfolio}
@@ -345,6 +380,22 @@ export default function App() {
               className="text-xs text-rose-600 hover:text-rose-800 font-bold underline cursor-pointer shrink-0"
             >
               إغلاق
+            </button>
+          </div>
+        )}
+
+        {/* WhatsApp Auto-Update Notification Banner */}
+        {whatsAppNotice && (
+          <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 p-3 sm:p-4 rounded-xl flex items-center justify-between gap-2.5 sm:gap-3 text-xs sm:text-sm animate-in fade-in duration-200">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
+              <span className="font-bold">{whatsAppNotice}</span>
+            </div>
+            <button
+              onClick={() => setActiveTab('whatsapp')}
+              className="text-xs text-emerald-700 hover:text-emerald-900 font-black underline cursor-pointer shrink-0"
+            >
+              عرض محفظة واتساب
             </button>
           </div>
         )}
@@ -395,6 +446,33 @@ export default function App() {
                     >
                       <Database className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       <span>فتح المحفظة الرئيسية</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* WhatsApp Portfolio Quick Banner if whatsAppRecords has records */}
+                {whatsAppRecords.length > 0 && (
+                  <div className="max-w-4xl mx-auto p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-950 via-slate-900 to-slate-900 text-white flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 border border-emerald-800/60 shadow-md">
+                    <div className="flex items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
+                        <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-xs sm:text-sm font-bold text-white">
+                          لديك <span className="text-emerald-400 font-mono font-black">{whatsAppRecords.length.toLocaleString()}</span> عميل في «محفظة واتساب الدائمة»
+                        </h3>
+                        <p className="text-[10px] sm:text-xs text-slate-300 truncate sm:whitespace-normal">
+                          أرقام جوال صالحة وروابط مراسلة مباشرة تم حفظها تلقائياً
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setActiveTab('whatsapp')}
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm shrink-0"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span>فتح محفظة واتساب</span>
                     </button>
                   </div>
                 )}
@@ -520,6 +598,25 @@ export default function App() {
             onClearMaster={handleClearMasterPortfolio}
             onSwitchToImported={() => setActiveTab('imported')}
             importedRecordsCount={portfolioRecords.length}
+          />
+        )}
+
+        {/* Tab 3: WhatsApp Portfolio (محفظة واتساب الدائمة المستقلة) */}
+        {activeTab === 'whatsapp' && (
+          <WhatsAppPortfolioView
+            records={whatsAppRecords}
+            onClear={() => {
+              clearWhatsAppMasterPortfolio();
+              setWhatsAppRecords([]);
+            }}
+            onImportClick={() => {
+              const input = document.getElementById('compact-import-btn') || document.getElementById('main-import-btn');
+              if (input) {
+                input.click();
+              } else {
+                setActiveTab('imported');
+              }
+            }}
           />
         )}
       </main>
